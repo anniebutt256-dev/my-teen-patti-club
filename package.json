@@ -1,0 +1,39 @@
+{
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "bcryptjs": "^2.4.3",
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "redis": "^4.7.0",
+    "socket.io": "^4.8.0",
+    "socket.io-adapter": "^2.5.0",
+    "socket.io-client": "^4.8.0",
+    "zod": "^3.23.0"
+  },
+  "description": "Multiplayer Classic Teen Patti for friends \u2014 virtual chips only, no real-money wagering",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "prisma": "^6.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "name": "my-teen-patti-club",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "tsx server.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "start": "NODE_ENV=production tsx server.ts",
+    "test": "tsx --test tests/engine.test.ts tests/phase2.test.ts tests/phase3.test.ts tests/phase4.test.ts tests/phase5.test.ts tests/phase6.test.ts tests/phase7.test.ts",
+    "test:integration": "tsx --test tests/phase6.integration.test.ts",
+    "test:all": "npm test && npm run test:integration"
+  },
+  "version": "0.1.0"
+}

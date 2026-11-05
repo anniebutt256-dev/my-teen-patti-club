@@ -1,0 +1,311 @@
+// MY TEEN PATTI CLUB — Prisma schema (Phase 1, 2026-11-03)
+// Virtual chips only. No real-money wagering, deposits or withdrawals in v1.
+// Easypaisa payment architecture is modelled separately and DISABLED by default
+// (see PaymentGatewayConfig) pending legal review and provider approval.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- users & auth
+
+enum UserRole {
+  PLAYER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  mobileNumber  String     @unique // E.164, e.g. +92xxxxxxxxxx
+  username      String     @unique // unique, user-chosen, case-insensitive claim
+  displayName   String
+  avatarUrl     String?
+  role          UserRole   @default(PLAYER)
+  status        UserStatus @default(ACTIVE)
+  mobileVerified Boolean   @default(false)
+  passwordHash  String? // scrypt hash for username+password login (owner-created accounts); null = OTP-only
+  signupBonusGranted Boolean @default(false) // 10,000 chips exactly once
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  lastLoginAt   DateTime?
+
+  otpCodes        OtpCode[]
+  wallet          Wallet?
+  chipTransactions ChipTransaction[]
+  ownedRooms      Room[]          @relation("RoomOwner")
+  roomSeats       RoomPlayer[]
+  hands           PlayerHand[]
+  actions         GameAction[]
+  results         GameResult[]
+  reportsMade     Report[]        @relation("ReportReporter")
+  reportsReceived Report[]        @relation("ReportTarget")
+  adminAudits     AdminAuditLog[]
+
+  @@index([status])
+}
+
+model OtpCode {
+  id          String    @id @default(cuid())
+  userId      String?   // null until the number maps to an account
+  mobileNumber String
+  codeHash    String    // SHA-256 hash + salt; plaintext OTP is never stored
+  salt        String
+  purpose     String    @default("LOGIN") // LOGIN | REGISTER
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([mobileNumber, createdAt])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------- wallet (virtual chips only)
+
+enum ChipTxType {
+  SIGNUP_BONUS // 10,000 once per verified account
+  BOOT
+  CHAAL
+  POT_WIN
+  ADMIN_GRANT
+  ADMIN_DEDUCT
+  REFUND // e.g. round aborted
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0) // virtual chips; integer, never negative in a committed tx
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model ChipTransaction {
+  id             String     @id @default(cuid())
+  userId         String
+  walletId       String
+  type           ChipTxType
+  amount         Int // signed: + credit, - debit
+  balanceAfter   Int
+  roundId        String?
+  idempotencyKey String     @unique // a replayed game action can never double-post
+  note           String?
+  createdAt      DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([roundId])
+}
+
+// ---------------------------------------------------------------- rooms & seating
+
+enum RoomType {
+  PUBLIC
+  PRIVATE
+}
+
+enum RoomStatus {
+  WAITING
+  PLAYING
+  CLOSED
+}
+
+model Room {
+  id           String     @id @default(cuid())
+  code         String     @unique // unique room ID players join with
+  name         String
+  type         RoomType   @default(PUBLIC)
+  passwordHash String? // required for PRIVATE rooms; bcrypt hash, never plaintext
+  ownerId      String
+  bootAmount   Int        @default(10)
+  minStake     Int        @default(10)
+  maxPlayers   Int        @default(6) // 2-6 per table
+  status       RoomStatus @default(WAITING)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  owner   User         @relation("RoomOwner", fields: [ownerId], references: [id])
+  players RoomPlayer[]
+  rounds  GameRound[]
+
+  @@index([type, status])
+}
+
+enum SeatStatus {
+  SEATED
+  LEFT
+  KICKED
+}
+
+model RoomPlayer {
+  id       String     @id @default(cuid())
+  roomId   String
+  userId   String
+  seatNo   Int // 0-5
+  status   SeatStatus @default(SEATED)
+  joinedAt DateTime   @default(now())
+  leftAt   DateTime?
+
+  room Room @relation(fields: [roomId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([roomId, seatNo])
+  @@unique([roomId, userId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------- game rounds
+
+enum RoundStatus {
+  DEALING
+  BETTING
+  SHOWDOWN
+  SETTLED
+  ABORTED
+}
+
+model GameRound {
+  id           String      @id @default(cuid())
+  roomId       String
+  roundNo      Int
+  bootAmount   Int
+  potTotal     Int         @default(0)
+  currentStake Int         @default(0)
+  status       RoundStatus @default(DEALING)
+  winnerUserId String?
+  startedAt    DateTime    @default(now())
+  endedAt      DateTime?
+
+  room    Room          @relation(fields: [roomId], references: [id])
+  hands   PlayerHand[]
+  actions GameAction[]
+  result  GameResult?
+
+  @@unique([roomId, roundNo])
+  @@index([status])
+}
+
+// Private: a player's cards. Rows are read by the server only; a hand is sent
+// over the socket exclusively to its owner. Never include in public table state.
+model PlayerHand {
+  id       String  @id @default(cuid())
+  roundId  String
+  userId   String
+  cards    Json // exactly 3 cards, server-side only
+  isSeen   Boolean @default(false)
+  isPacked Boolean @default(false)
+  handRank String? // evaluated category at showdown, e.g. PURE_SEQUENCE
+  handScore Int? // comparable score used by the server's winner calculation
+
+  round GameRound @relation(fields: [roundId], references: [id])
+  user  User      @relation(fields: [userId], references: [id])
+
+  @@unique([roundId, userId])
+}
+
+enum ActionType {
+  BOOT
+  SEEN
+  CHAAL
+  RAISE
+  PACK
+  SHOW
+  SIDE_SHOW
+}
+
+model GameAction {
+  id             String     @id @default(cuid())
+  roundId        String
+  userId         String
+  type           ActionType
+  amount         Int        @default(0)
+  targetUserId   String? // SIDE_SHOW target
+  idempotencyKey String     @unique
+  createdAt      DateTime   @default(now())
+
+  round GameRound @relation(fields: [roundId], references: [id])
+  user  User      @relation(fields: [userId], references: [id])
+
+  @@index([roundId, createdAt])
+}
+
+model GameResult {
+  id          String   @id @default(cuid())
+  roundId     String   @unique
+  winnerUserId String
+  potWon      Int
+  winningHand String // e.g. TRAIL
+  settledAt   DateTime @default(now())
+
+  round  GameRound @relation(fields: [roundId], references: [id])
+  winner User      @relation(fields: [winnerUserId], references: [id])
+}
+
+// ---------------------------------------------------------------- reports & admin
+
+enum ReportStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+}
+
+model Report {
+  id         String       @id @default(cuid())
+  reporterId String
+  targetId   String?
+  roomId     String?
+  reason     String
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+  reviewedAt DateTime?
+
+  reporter User  @relation("ReportReporter", fields: [reporterId], references: [id])
+  target   User? @relation("ReportTarget", fields: [targetId], references: [id])
+
+  @@index([status])
+}
+
+model AdminAuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  action    String // e.g. USER_SUSPEND, CHIP_GRANT, ROOM_CLOSE
+  targetType String
+  targetId  String
+  reason    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  admin User @relation(fields: [adminId], references: [id])
+
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------- payments (DISABLED architecture)
+// Kept separate from the wallet on purpose. Nothing in v1 reads or writes these
+// tables in a user flow. Easypaisa may only be enabled after legal review and
+// provider approval, and even then deposits/withdrawals need their own design.
+
+model PaymentGatewayConfig {
+  id          String  @id @default(cuid())
+  provider    String  @unique // e.g. EASYPAISA
+  enabled     Boolean @default(false)
+  credentials Json? // encrypted at rest when ever populated
+  note        String? @default("Disabled pending legal and provider approval")
+  updatedAt   DateTime @updatedAt
+}

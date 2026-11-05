@@ -1,0 +1,24 @@
+# MY TEEN PATTI CLUB — Render Blueprint (free tier, Rs 0)
+# Deploy: Render dashboard → New → Blueprint → connect the GitHub repo.
+# Database lives on Neon (free Postgres that never expires) — paste its
+# connection string as DATABASE_URL when Render asks.
+services:
+  - type: web
+    name: my-teen-patti-club
+    runtime: node
+    plan: free
+    buildCommand: npm install && npx prisma generate && npx prisma db push && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # paste the Neon connection string
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: OWNER_USERNAME
+        sync: false # owner's admin username, e.g. club_owner (3-20 chars)
+      - key: OWNER_PASSWORD
+        sync: false # owner's admin password (min 6 chars) — first login creates the account
+      - key: PUBLIC_BASE_URL
+        sync: false # after first deploy, set to https://<service>.onrender.com and redeploy
