@@ -7,7 +7,7 @@ services:
     name: my-teen-patti-club
     runtime: node
     plan: free
-    buildCommand: npm install && npx prisma generate && npx prisma db push && npm run build
+    buildCommand: npm install --include=dev && npx prisma generate && npx prisma db push && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
