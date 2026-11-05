@@ -86,6 +86,7 @@ a { color: var(--gold); }
   border-radius: 999px; padding: 1px 7px; font-size: 10px;
 }
 .badge-packed { background: rgba(255,80,80,.25); border-color: rgba(255,80,80,.7); }
+.badge-seen { background: rgba(76,175,80,.3); border-color: rgba(76,175,80,.85); color: #c8f7c5; font-weight: 700; }
 .my-hand {
   display: flex; align-items: center; justify-content: center;
   margin-top: 14px; font-weight: 700;

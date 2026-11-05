@@ -382,7 +382,7 @@ export default function TablePage() {
               </div>
               {rp && (
                 <div className="seat-cards">
-                  {isMe && myHand
+                  {isMe && myHand && rp.seen
                     ? myHand.cards.map((c, i) => (
                         <PlayingCard key={i} card={c} small delayMs={i * 120} />
                       ))
@@ -396,7 +396,9 @@ export default function TablePage() {
                   {rp.packed ? (
                     <span className="badge badge-packed">Packed</span>
                   ) : (
-                    <span className="badge">{rp.seen ? "Seen" : "Blind"}</span>
+                    <span className={rp.seen ? "badge badge-seen" : "badge"}>
+                      {rp.seen ? "👁 Seen" : "Blind"}
+                    </span>
                   )}
                   {rp.totalBet > 0 && <span className="badge">Bet {rp.totalBet}</span>}
                 </div>
